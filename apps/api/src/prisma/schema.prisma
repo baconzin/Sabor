@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model DeliveryArea {
+  id               String   @id @default(uuid())
+  name             String
+  city             String
+  neighborhoods    String[]
+  zipCodeStart     String?
+  zipCodeEnd       String?
+  deliveryFee      Decimal  @db.Decimal(10, 2)
+  minOrderValue    Decimal? @db.Decimal(10, 2)
+  estimatedTimeAdd Int      @default(0)
+  freeShippingOver Decimal? @db.Decimal(10, 2)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  deliveries       Delivery[]
+
+  @@map("delivery_areas")
+}
+
+model DeliveryPerson {
+  id            String     @id @default(uuid())
+  name          String
+  cpf           String     @unique
+  phone         String
+  whatsapp      String?
+  email         String?
+  vehicleType   String
+  licensePlate  String?
+  vehicleModel  String?
+  payType       String     // FIXED, DISTANCE
+  feePerDelivery Decimal?  @db.Decimal(10, 2)
+  feePerKm      Decimal?   @db.Decimal(10, 2)
+  pixKey        String?
+  notes         String?
+  status        String     @default("ATIVO") // ATIVO, INATIVO, DISPONIVEL, EM_ENTREGA, PAUSADO, BLOQUEADO
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deliveries    Delivery[]
+
+  @@map("delivery_persons")
+}
+
+model Delivery {
+  id               String          @id @default(uuid())
+  orderId          String          @unique
+  deliveryPersonId String?
+  deliveryAreaId   String?
+  customerName     String
+  customerPhone    String
+  address          String
+  reference        String?
+  paymentMethod    String
+  amountToReceive  Decimal         @db.Decimal(10, 2)
+  changeFor        Decimal?        @db.Decimal(10, 2)
+  deliveryFee      Decimal         @db.Decimal(10, 2)
+  deliveryPersonFee Decimal        @default(0) @db.Decimal(10, 2)
+  assignedAt       DateTime?
+  pickedUpAt       DateTime?
+  deliveredAt      DateTime?
+  status           String          @default("AGUARDANDO_ENTREGADOR")
+  notes            String?
+  
+  deliveryPerson   DeliveryPerson? @relation(fields: [deliveryPersonId], references: [id])
+  deliveryArea     DeliveryArea?   @relation(fields: [deliveryAreaId], references: [id])
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@map("deliveries")
+}
+
+model Promotion {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?
+  discountType  String   // PERCENTAGE, FIXED
+  discountValue Decimal  @db.Decimal(10, 2)
+  minOrderValue Decimal? @db.Decimal(10, 2)
+  startDate     DateTime
+  endDate       DateTime
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("promotions")
+}
+
+model Coupon {
+  id            String   @id @default(uuid())
+  code          String   @unique
+  discountType  String   // PERCENTAGE, FIXED
+  discountValue Decimal  @db.Decimal(10, 2)
+  minOrderValue Decimal? @db.Decimal(10, 2)
+  maxUses       Int?
+  usesCount     Int      @default(0)
+  startDate     DateTime
+  endDate       DateTime
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("coupons")
+}
