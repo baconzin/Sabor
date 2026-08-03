@@ -1,45 +1,25 @@
-import { useState } from 'react';
-import { Unit, Ingredient, Product, RecipeItem, Sale, PaymentMethod, Purchase, Customer, Order, OrderItem, OrderStatus, OrderType } from './types';
-import { Plus, Trash2, Edit2, Check, X, Utensils, Wheat, DollarSign, Calculator, TrendingUp, Store, PieChart, Package, AlertTriangle, ArrowUpCircle, Users, ClipboardList, ChefHat } from 'lucide-react';
-
-const INITIAL_INGREDIENTS: Ingredient[] = [
-  { id: '1', name: 'Arroz Branco', unit: 'KG', costPerUnit: 5.50, stock: 10 },
-  { id: '2', name: 'Feijão Carioca', unit: 'KG', costPerUnit: 7.20, stock: 5 },
-  { id: '3', name: 'Peito de Frango', unit: 'KG', costPerUnit: 18.90, stock: 8 },
-  { id: '4', name: 'Farinha de Rosca', unit: 'KG', costPerUnit: 8.50, stock: 2 },
-  { id: '5', name: 'Ovo', unit: 'UN', costPerUnit: 0.80, stock: 30 },
-  { id: '6', name: 'Óleo de Soja', unit: 'L', costPerUnit: 6.90, stock: 3 },
-];
-
-const INITIAL_PRODUCTS: Product[] = [
-  {
-    id: 'p1',
-    name: 'Marmita de Frango Grelhado',
-    description: 'Arroz, feijão e frango grelhado.',
-    price: 22.00,
-    recipe: [
-      { id: 'r1', ingredientId: '1', quantity: 0.15, wastePercentage: 20 }, // 150g arroz
-      { id: 'r2', ingredientId: '2', quantity: 0.10, wastePercentage: 20 }, // 100g feijao
-      { id: 'r3', ingredientId: '3', quantity: 0.15, wastePercentage: 20 }, // 150g frango
-    ]
-  },
-  {
-    id: 'p2',
-    name: 'Marmita de Frango Empanado',
-    description: 'Arroz, feijão, frango empanado frito.',
-    price: 25.00,
-    recipe: [
-      { id: 'r4', ingredientId: '1', quantity: 0.15, wastePercentage: 20 },
-      { id: 'r5', ingredientId: '2', quantity: 0.10, wastePercentage: 20 },
-      { id: 'r6', ingredientId: '3', quantity: 0.15, wastePercentage: 20 },
-      { id: 'r7', ingredientId: '4', quantity: 0.05, wastePercentage: 20 },
-      { id: 'r8', ingredientId: '5', quantity: 1, wastePercentage: 0 },
-      { id: 'r9', ingredientId: '6', quantity: 0.10, wastePercentage: 20 },
-    ]
-  }
-];
+import { useCallback, useEffect, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { Unit, Ingredient, Product, RecipeItem, Sale, PaymentMethod, Purchase, Customer, Order, OrderStatus, OrderType } from './types';
+import { Plus, Trash2, Edit2, Check, X, Utensils, Wheat, TrendingUp, Store, PieChart, Package, AlertTriangle, ArrowUpCircle, Users, ClipboardList, ChefHat, LogOut, Calculator } from 'lucide-react';
+import LoginScreen from './components/LoginScreen';
+import { isSupabaseConfigured, supabase } from './lib/supabase';
+import {
+  changeOrderStatus,
+  createCustomer,
+  createIngredient,
+  createOrder,
+  deleteIngredient,
+  fetchRestaurantData,
+  registerPurchase,
+  saveProductWithRecipe,
+} from './services/restaurantService';
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [loadingData, setLoadingData] = useState(false);
+  const [appError, setAppError] = useState('');
   const [activeTab, setActiveTab] = useState<'ingredients' | 'products' | 'pos' | 'finance' | 'inventory' | 'customers' | 'kitchen'>('pos');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -48,107 +28,184 @@ export default function App() {
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
   const [newCustomerAddress, setNewCustomerAddress] = useState('');
-  const [ingredients, setIngredients] = useState<Ingredient[]>(INITIAL_INGREDIENTS);
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
 
-  // Inventory/Purchasing State
   const [purchaseIngredientId, setPurchaseIngredientId] = useState('');
   const [purchaseQuantity, setPurchaseQuantity] = useState('');
   const [purchaseTotalCost, setPurchaseTotalCost] = useState('');
 
-  // Ingredient Form State
   const [newIngredientName, setNewIngredientName] = useState('');
   const [newIngredientUnit, setNewIngredientUnit] = useState<Unit>('KG');
   const [newIngredientCost, setNewIngredientCost] = useState('');
   const [newIngredientStock, setNewIngredientStock] = useState('0');
 
-  // POS State
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('PIX');
   const [isSelling, setIsSelling] = useState(false);
 
-  // Product Form State
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [newProductName, setNewProductName] = useState('');
   const [newProductPrice, setNewProductPrice] = useState('');
   const [recipeItems, setRecipeItems] = useState<RecipeItem[]>([]);
 
-  
-  const handleAddCustomer = () => {
-    if (!newCustomerName || !newCustomerPhone) return;
-    const customer: Customer = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: newCustomerName,
-      phone: newCustomerPhone,
-      address: newCustomerAddress
+  const errorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'object' && error && 'message' in error) return String(error.message);
+    return fallback;
+  };
+
+  const reportError = (error: unknown, fallback: string) => {
+    const message = errorMessage(error, fallback);
+    setAppError(message);
+    window.alert(message);
+  };
+
+  const loadData = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoadingData(true);
+    try {
+      const data = await fetchRestaurantData();
+      setCustomers(data.customers);
+      setIngredients(data.ingredients);
+      setProducts(data.products);
+      setPurchases(data.purchases);
+      setSales(data.sales);
+      setOrders(data.orders);
+      setAppError('');
+    } catch (error) {
+      setAppError(errorMessage(error, 'Não foi possível carregar os dados do restaurante.'));
+    } finally {
+      if (showLoading) setLoadingData(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const client = supabase;
+    if (!client) {
+      setCheckingSession(false);
+      return;
+    }
+
+    void client.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setCheckingSession(false);
+    });
+
+    const { data: authListener } = client.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setCheckingSession(false);
+    });
+
+    return () => authListener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const client = supabase;
+    if (!client || !session) return;
+
+    void loadData(true);
+    let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => void loadData(false), 250);
     };
-    setCustomers([...customers, customer]);
-    setNewCustomerName('');
-    setNewCustomerPhone('');
-    setNewCustomerAddress('');
-    alert('Cliente cadastrado!');
-  };
 
-  const updateOrderStatus = (orderId: string, status: OrderStatus) => {
-    setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o));
-  };
+    const channel = client
+      .channel('sabor-database-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recipe_items' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchases' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, scheduleReload)
+      .subscribe();
 
-  const handleRegisterPurchase = () => {
-    if (!purchaseIngredientId || !purchaseQuantity || !purchaseTotalCost) return;
-    
-    const quantity = parseFloat(purchaseQuantity);
-    const totalCost = parseFloat(purchaseTotalCost);
-    const ingredient = ingredients.find(i => i.id === purchaseIngredientId);
-    
-    if (!ingredient) return;
-
-    // Calculate new average cost per unit
-    const currentTotalValue = ingredient.stock * ingredient.costPerUnit;
-    const newStock = ingredient.stock + quantity;
-    const newAverageCost = newStock > 0 ? (currentTotalValue + totalCost) / newStock : ingredient.costPerUnit;
-
-    const newPurchase: Purchase = {
-      id: Math.random().toString(36).substr(2, 9),
-      ingredientId: purchaseIngredientId,
-      quantity,
-      totalCost,
-      date: new Date().toISOString()
+    return () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      void client.removeChannel(channel);
     };
+  }, [loadData, session]);
 
-    setPurchases([...purchases, newPurchase]);
-    
-    const updatedIngredients = ingredients.map(ing => 
-      ing.id === purchaseIngredientId 
-        ? { ...ing, stock: newStock, costPerUnit: newAverageCost }
-        : ing
-    );
-    
-    setIngredients(updatedIngredients);
-    setPurchaseIngredientId('');
-    setPurchaseQuantity('');
-    setPurchaseTotalCost('');
-    alert('Compra registrada e estoque atualizado com sucesso!');
+  const handleAddCustomer = async () => {
+    if (!newCustomerName.trim() || !newCustomerPhone.trim()) return;
+    try {
+      const customer = await createCustomer({
+        name: newCustomerName,
+        phone: newCustomerPhone,
+        address: newCustomerAddress,
+      });
+      setCustomers((current) => [...current, customer].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewCustomerName('');
+      setNewCustomerPhone('');
+      setNewCustomerAddress('');
+      window.alert('Cliente cadastrado!');
+    } catch (error) {
+      reportError(error, 'Não foi possível cadastrar o cliente.');
+    }
   };
 
-  const handleAddIngredient = () => {
-    if (!newIngredientName || !newIngredientCost) return;
-    const newIng: Ingredient = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: newIngredientName,
-      unit: newIngredientUnit,
-      costPerUnit: parseFloat(newIngredientCost),
-      stock: parseFloat(newIngredientStock) || 0
-    };
-    setIngredients([...ingredients, newIng]);
-    setNewIngredientName('');
-    setNewIngredientCost('');
-    setNewIngredientStock('0');
+  const updateOrderStatus = async (orderId: string, status: OrderStatus) => {
+    try {
+      await changeOrderStatus(orderId, status);
+      setOrders((current) => current.map((order) => (order.id === orderId ? { ...order, status } : order)));
+    } catch (error) {
+      reportError(error, 'Não foi possível atualizar o pedido.');
+    }
   };
 
-  const handleDeleteIngredient = (id: string) => {
-    setIngredients(ingredients.filter(i => i.id !== id));
+  const handleRegisterPurchase = async () => {
+    const quantity = Number(purchaseQuantity);
+    const totalCost = Number(purchaseTotalCost);
+    if (!purchaseIngredientId || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(totalCost) || totalCost < 0) {
+      window.alert('Preencha o ingrediente, a quantidade e o custo corretamente.');
+      return;
+    }
+
+    try {
+      await registerPurchase({ ingredientId: purchaseIngredientId, quantity, totalCost });
+      setPurchaseIngredientId('');
+      setPurchaseQuantity('');
+      setPurchaseTotalCost('');
+      await loadData(false);
+      window.alert('Compra registrada e estoque atualizado com sucesso!');
+    } catch (error) {
+      reportError(error, 'Não foi possível registrar a compra.');
+    }
+  };
+
+  const handleAddIngredient = async () => {
+    const costPerUnit = Number(newIngredientCost);
+    const stock = Number(newIngredientStock || 0);
+    if (!newIngredientName.trim() || !Number.isFinite(costPerUnit) || costPerUnit < 0 || !Number.isFinite(stock) || stock < 0) return;
+
+    try {
+      const ingredient = await createIngredient({
+        name: newIngredientName,
+        unit: newIngredientUnit,
+        costPerUnit,
+        stock,
+      });
+      setIngredients((current) => [...current, ingredient].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewIngredientName('');
+      setNewIngredientCost('');
+      setNewIngredientStock('0');
+    } catch (error) {
+      reportError(error, 'Não foi possível adicionar o ingrediente.');
+    }
+  };
+
+  const handleDeleteIngredient = async (id: string) => {
+    if (!window.confirm('Deseja realmente excluir este ingrediente?')) return;
+    try {
+      await deleteIngredient(id);
+      setIngredients((current) => current.filter((ingredient) => ingredient.id !== id));
+    } catch (error) {
+      reportError(error, 'Não foi possível excluir. O ingrediente pode estar sendo usado em uma receita.');
+    }
   };
 
   const startNewProduct = () => {
@@ -158,123 +215,116 @@ export default function App() {
     setRecipeItems([]);
   };
 
-  const editProduct = (p: Product) => {
-    setEditingProductId(p.id);
-    setNewProductName(p.name);
-    setNewProductPrice(p.price.toString());
-    setRecipeItems([...p.recipe]);
+  const editProduct = (product: Product) => {
+    setEditingProductId(product.id);
+    setNewProductName(product.name);
+    setNewProductPrice(product.price.toString());
+    setRecipeItems(product.recipe.map((item) => ({ ...item })));
   };
 
-  const saveProduct = () => {
-    if (!newProductName || !newProductPrice) return;
-    
-    if (editingProductId === 'new') {
-      const newProd: Product = {
-        id: Math.random().toString(36).substr(2, 9),
+  const saveProduct = async () => {
+    const price = Number(newProductPrice);
+    if (!newProductName.trim() || !Number.isFinite(price) || price < 0) return;
+
+    const currentProduct = products.find((product) => product.id === editingProductId);
+    try {
+      await saveProductWithRecipe({
+        id: editingProductId && editingProductId !== 'new' ? editingProductId : undefined,
         name: newProductName,
-        description: '',
-        price: parseFloat(newProductPrice),
-        recipe: recipeItems
-      };
-      setProducts([...products, newProd]);
-    } else {
-      setProducts(products.map(p => p.id === editingProductId ? {
-        ...p,
-        name: newProductName,
-        price: parseFloat(newProductPrice),
-        recipe: recipeItems
-      } : p));
+        description: currentProduct?.description ?? '',
+        price,
+        recipe: recipeItems,
+      });
+      setEditingProductId(null);
+      await loadData(false);
+      window.alert('Prato salvo com sucesso!');
+    } catch (error) {
+      reportError(error, 'Não foi possível salvar o prato.');
     }
-    setEditingProductId(null);
   };
 
   const addRecipeItem = () => {
     if (ingredients.length === 0) return;
-    setRecipeItems([
-      ...recipeItems,
+    setRecipeItems((current) => [
+      ...current,
       {
-        id: Math.random().toString(36).substr(2, 9),
+        id: `local-${Date.now()}-${current.length}`,
         ingredientId: ingredients[0].id,
         quantity: 0,
-        wastePercentage: 20 // Default 20% as requested
-      }
+        wastePercentage: 20,
+      },
     ]);
   };
 
   const updateRecipeItem = (id: string, field: keyof RecipeItem, value: number | string) => {
-    setRecipeItems(recipeItems.map(item => item.id === id ? { ...item, [field]: value } : item));
+    setRecipeItems((current) => current.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
   };
 
   const removeRecipeItem = (id: string) => {
-    setRecipeItems(recipeItems.filter(item => item.id !== id));
+    setRecipeItems((current) => current.filter((item) => item.id !== id));
   };
 
   const calculateCost = (recipe: RecipeItem[]) => {
     return recipe.reduce((total, item) => {
-      const ingredient = ingredients.find(i => i.id === item.ingredientId);
+      const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
       if (!ingredient) return total;
-      // Formula: quantity * (1 + waste/100) * costPerUnit
       const quantityWithWaste = item.quantity * (1 + item.wastePercentage / 100);
-      return total + (quantityWithWaste * ingredient.costPerUnit);
+      return total + quantityWithWaste * ingredient.costPerUnit;
     }, 0);
   };
 
-  
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (!selectedProductId) return;
-    const product = products.find(p => p.id === selectedProductId);
-    if (!product) return;
     if (orderType === 'DELIVERY' && !selectedCustomerId) {
-      alert('Selecione um cliente para entrega.');
+      window.alert('Selecione um cliente para entrega.');
       return;
     }
 
     setIsSelling(true);
-
-    setTimeout(() => {
-      const newIngredients = [...ingredients];
-      
-      for (const item of product.recipe) {
-        const ingIndex = newIngredients.findIndex(i => i.id === item.ingredientId);
-        if (ingIndex >= 0) {
-          const quantityWithWaste = item.quantity * (1 + item.wastePercentage / 100);
-          newIngredients[ingIndex] = {
-            ...newIngredients[ingIndex],
-            stock: newIngredients[ingIndex].stock - quantityWithWaste
-          };
-        }
-      }
-
-      setIngredients(newIngredients);
-
-      const sale: Sale = {
-        id: Math.random().toString(36).substr(2, 9),
-        productId: product.id,
-        paymentMethod: paymentMethod,
-        amount: product.price,
-        date: new Date().toISOString()
-      };
-      
-      const newOrder: Order = {
-        id: Math.random().toString(36).substr(2, 9),
-        orderNumber: orders.length + 1,
-        status: 'AGUARDANDO_CONFIRMACAO',
+    try {
+      await createOrder({
+        productId: selectedProductId,
+        customerId: selectedCustomerId,
         type: orderType,
-        customerId: selectedCustomerId || 'visitante',
-        items: [{ productId: product.id, quantity: 1, unitPrice: product.price }],
-        total: product.price,
-        paymentMethod: paymentMethod,
-        createdAt: new Date().toISOString()
-      };
-
-      setOrders([...orders, newOrder]);
-      setSales([...sales, sale]);
+        paymentMethod,
+      });
       setSelectedProductId(null);
-      setIsSelling(false);
-      alert('Pedido realizado e enviado para a cozinha!');
+      await loadData(false);
+      window.alert('Pedido realizado e enviado para a cozinha!');
       setActiveTab('kitchen');
-    }, 600);
+    } catch (error) {
+      reportError(error, 'Não foi possível concluir o pedido.');
+    } finally {
+      setIsSelling(false);
+    }
   };
+
+  const handleLogout = async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+  };
+
+  if (!isSupabaseConfigured) {
+    return (
+      <main className="min-h-screen bg-zinc-950 text-zinc-50 flex items-center justify-center p-6">
+        <section className="max-w-2xl bg-zinc-900 border border-red-900 rounded-2xl p-8">
+          <h1 className="text-2xl font-black text-red-400">Falta configurar o Supabase</h1>
+          <p className="text-zinc-300 mt-4">Crie o arquivo <strong>.env.local</strong> na pasta do projeto e informe:</p>
+          <pre className="mt-4 p-4 rounded-xl bg-zinc-950 overflow-x-auto text-sm">VITE_SUPABASE_URL=...{`\n`}VITE_SUPABASE_PUBLISHABLE_KEY=...</pre>
+        </section>
+      </main>
+    );
+  }
+
+  if (checkingSession) {
+    return <main className="min-h-screen bg-zinc-950 text-zinc-300 flex items-center justify-center">Verificando acesso...</main>;
+  }
+
+  if (!session) return <LoginScreen />;
+
+  if (loadingData) {
+    return <main className="min-h-screen bg-zinc-950 text-zinc-300 flex items-center justify-center">Carregando dados do restaurante...</main>;
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-50 font-sans">
@@ -332,9 +382,25 @@ export default function App() {
             <PieChart size={16} /> Financeiro
           </button>
         </div>
+        <div className="ml-4 flex items-center gap-3 shrink-0">
+          <span className="hidden xl:block text-xs text-zinc-500 max-w-40 truncate">{session.user.email}</span>
+          <button
+            onClick={handleLogout}
+            className="h-10 px-3 rounded-lg border border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2 text-sm font-semibold"
+            title="Sair"
+          >
+            <LogOut size={16} /> Sair
+          </button>
+        </div>
       </header>
 
       <main className="max-w-6xl mx-auto p-6 md:p-8">
+        {appError && (
+          <div className="mb-6 rounded-xl border border-red-800 bg-red-950/40 px-4 py-3 text-red-300 flex items-start justify-between gap-4">
+            <span>{appError}</span>
+            <button onClick={() => setAppError('')} className="font-bold">Fechar</button>
+          </div>
+        )}
         
         {activeTab === 'ingredients' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">

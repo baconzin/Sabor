@@ -1,0 +1,72 @@
+SISTEMA SABOR — COMO INSTALAR ESTA ATUALIZAÇÃO
+
+IMPORTANTE
+- Este pacote NÃO contém seu arquivo .env.local nem sua chave do Supabase.
+- Ao extrair sobre a pasta atual, o seu .env.local deve continuar no lugar.
+- Faça uma cópia da pasta Sabor antes de substituir os arquivos.
+
+1) COPIAR OS ARQUIVOS
+
+Extraia todo o conteúdo deste ZIP dentro de:
+C:\Users\Raphael A. Pascon\Sabor
+
+Quando o Windows perguntar, escolha substituir os arquivos existentes.
+
+2) CRIAR AS TABELAS NO SUPABASE
+
+Abra o arquivo:
+supabase\schema.sql
+
+Copie todo o conteúdo.
+No Supabase, abra:
+SQL Editor > New query
+
+Cole o conteúdo e clique em Run.
+O resultado esperado é uma mensagem de sucesso.
+
+3) CRIAR O PRIMEIRO USUÁRIO
+
+No Supabase, abra:
+Authentication > Users > Add user > Create new user
+
+Informe seu e-mail e uma senha.
+Marque a opção para confirmar o usuário automaticamente, se ela aparecer.
+
+4) CONFERIR O ARQUIVO .env.local
+
+Ele precisa estar na raiz da pasta Sabor e conter:
+
+VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_SUA_CHAVE
+
+Não use chave secret nem service_role.
+
+5) INSTALAR E INICIAR
+
+Abra o PowerShell dentro da pasta Sabor e execute:
+
+npm.cmd install
+npm.cmd run dev
+
+Abra no navegador:
+http://localhost:3000
+
+6) TESTE
+
+- Entre com o usuário criado no Supabase.
+- Cadastre um cliente.
+- Aperte F5.
+- O cliente deve continuar aparecendo.
+- Faça um pedido no computador e abra a aba Cozinha em outro aparelho conectado ao mesmo Wi-Fi.
+
+O QUE ESTA VERSÃO FAZ
+
+- Login por e-mail e senha.
+- Clientes salvos no banco.
+- Ingredientes e estoque salvos no banco.
+- Pratos e fichas técnicas salvos no banco.
+- Compras atualizam estoque e custo médio.
+- Pedidos geram venda e descontam estoque em uma única transação.
+- Pedidos aparecem em tempo real na cozinha.
+- Status dos pedidos é salvo.
+- Dados continuam depois do F5.

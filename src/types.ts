@@ -62,7 +62,7 @@ export interface Order {
   orderNumber: number;
   status: OrderStatus;
   type: OrderType;
-  customerId: string;
+  customerId: string | null;
   items: OrderItem[];
   total: number;
   paymentMethod: PaymentMethod;
